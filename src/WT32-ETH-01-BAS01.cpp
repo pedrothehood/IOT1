@@ -32,7 +32,7 @@
 #include <ESPmDNS.h>          // für komfortablen Zugriff: http://mein-wt32.local bzw. http://<sensorid>.local
 
 /* 29.3.2026 Webserver B */
-String webServerActive = "X";
+// String webServerActive = "X";
 #include <WebServer_WT32_ETH01.h>
 #include <Preferences.h>
 Preferences prefs;
@@ -126,6 +126,7 @@ String apiKeyValue = "";
 StaticJsonDocument<700> doc;
 String strStatus;
 String strSleep;
+String strServerActive;
 int delaymin = 60;
 int delaytsec = 3600000;
 /* Webservice -E-*/
@@ -235,17 +236,6 @@ void setup()
 
   Serial.println("\nVerbunden! IP: " + ETH.localIP().toString());
 
-  /* Webserver 29.3.2029 -B- */
-  if (webServerActive == "X")
-  {
-    server.on("/", HTTP_GET, handleRoot);
-    server.on("/save", HTTP_POST, handleSave);
-    server.begin();
-    Serial.println("HTTP Server läuft.");
-    debugLog("HTTP Server läuft.");
-  }
-  /* Webserver 29.3.2029 -E- */
-
   /* Telnet B*/
   // Telnet Setup
   telnet.onConnect(onTelnetConnect);
@@ -271,16 +261,17 @@ void loop()
 {
   /* Telnet B*/
   telnet.loop(); // Wichtig: Hält die Verbindung aufrecht
+  server.handleClient();
   /* Telnet E*/
   /* Webserver 29.3.2029 -B- */
-  if (webServerActive == "X")
-  {
-    server.handleClient();
-  }
-  else
-  {
-    // getPreferences();
-  }
+  /* if (webServerActive == "X")
+   {
+     server.handleClient();
+   }
+   else
+   {
+     // getPreferences();
+   }  */
   getPreferences(); // auf jeden Fall lesen
   static String strServerName = servername + "/" + "post-data.php";
   static String strServerNameFirst = servername + "/" + "get-sensoriddata.php?sensorid=" + sensorid;
@@ -295,7 +286,7 @@ void loop()
   {
     lastUpdate = millis();
 
-    if (MDNS.begin(sensorid))  // Sensorid als kurzurl: http.<sensorid>.local
+    if (MDNS.begin(sensorid)) // Sensorid als kurzurl: http.<sensorid>.local
     {
       Serial.println("mDNS Responder gestartet");
     }
@@ -362,6 +353,21 @@ void loop()
       strStatus = status;
       const char *sleep = doc["sensorinfo"][0]["sleep"];
       strSleep = sleep;
+      const char *serveractive = doc["sensorinfo"][0]["serveractive"];
+      strServerActive = serveractive;
+      /* Webserver 29.3.2029 -B- */
+      debugLog("strServerActive=");
+      debugLog(strServerActive);
+      if (strServerActive == "X")       
+      {
+      // nach vorne genommen  server.handleClient();
+        server.on("/", HTTP_GET, handleRoot);
+        server.on("/save", HTTP_POST, handleSave);
+        server.begin();
+        Serial.println("HTTP Server läuft.");
+        debugLog("HTTP Server läuft.");
+      }
+      /* Webserver 29.3.2029 -E- */
       Serial.print("status=");
       Serial.println(strStatus);
       Serial.print("delaytsec=");
@@ -420,7 +426,7 @@ void loop()
     {
       Serial.println("Status ist nicht aktiv, keine Daten gesendet");
     }
-    if (strSleep == "X" && webServerActive != "X") // nicht bei aktivem Webserver beenden
+    if (strSleep == "X" && strServerActive != "X") // nicht bei aktivem Webserver beenden
     {
       // 3. Ethernet sauber beenden
       debugLog("Beende Ethernet-Verbindung...");
