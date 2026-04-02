@@ -38,8 +38,12 @@
 Preferences prefs;
 WebServer server(80);
 
+// Physischer Button (Zieht gegen GND)
+#define CONFIG_BUTTON_PIN 32 
+
+
 // Variablen zum Zwischenspeichern der Werte
-String sensorid, apiKey, ssid, password, servername;
+String sensorid, apiKey, ssid, password, servername, mac;
 
 /* Preferences Lesen, falls Webserver nicht gestartet wird */
 void getPreferences()
@@ -51,6 +55,7 @@ void getPreferences()
   ssid = prefs.getString("ssid", "");
   password = prefs.getString("pass", "");
   servername = prefs.getString("srv", "");
+  //mac = prefs.getString("mac", "");
   prefs.end();
 }
 void handleRoot()
@@ -79,6 +84,7 @@ void handleRoot()
   html += "<label>SSID:</label> <input type='text' name='ssid' value='" + ssid + "'><br>";
   html += "<label>Passwort:</label> <input type='password' name='password' value='" + password + "'><br>";
   html += "<label>Servername:</label> <input type='text' name='servername' value='" + servername + "'><br>";
+   html += "<label>Macadresse:</label> <input type='text' name='mac' value='" + WiFi.macAddress() + "' readonly ><br>";
 
   html += "<br><input type='submit' value='Speichern und Neustarten'>";
   html += "</form></body></html>";
@@ -98,6 +104,7 @@ void handleSave()
     prefs.putString("ssid", server.arg("ssid"));
     prefs.putString("pass", server.arg("password"));
     prefs.putString("srv", server.arg("servername"));
+    
 
     prefs.end();
 
@@ -195,8 +202,8 @@ void setup()
   Serial.begin(115200);
 
   // WLAN komplett ausschalten
-  WiFi.mode(WIFI_OFF);
-  WiFi.disconnect(true);
+ // WiFi.mode(WIFI_OFF);
+ // WiFi.disconnect(true);
 
   // Bluetooth-Radio stoppen
   btStop();
@@ -251,7 +258,8 @@ void setup()
     debugLog("Meine IP ist: " + ipAsString);
   }
   /* Telnet E*/
-
+  debugLog("Mac-Adresse:");   // Mac-Adresse ausgeben
+  debugLog(ETH.macAddress()); // Mac-Adresse ausgeben
   // OTA Setup
   ArduinoOTA.setHostname("WT32-ETH01-Knoten");
   ArduinoOTA.begin();
@@ -358,9 +366,9 @@ void loop()
       /* Webserver 29.3.2029 -B- */
       debugLog("strServerActive=");
       debugLog(strServerActive);
-      if (strServerActive == "X")       
+      if (strServerActive == "X")
       {
-      // nach vorne genommen  server.handleClient();
+        // nach vorne genommen  server.handleClient();
         server.on("/", HTTP_GET, handleRoot);
         server.on("/save", HTTP_POST, handleSave);
         server.begin();
