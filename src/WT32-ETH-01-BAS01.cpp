@@ -25,12 +25,13 @@
 #include <ArduinoOTA.h>
 #include <HTTPClient.h>
 #include <DHT.h>
-#include <WiFi.h>             // Erforderlich für WiFiClient (auch bei Ethernet!)
-#include <esp_bt.h>           // ausschalten bluetooth
+#include <WiFi.h> // Erforderlich für WiFiClient (auch bei Ethernet!)
+// #include <esp_bt.h>           // ausschalten bluetooth
 #include <ArduinoJson.h>      // für Deserialisierung
 #include <WiFiClientSecure.h> // SSL Verschlüsselung
 #include <ESPmDNS.h>          // für komfortablen Zugriff: http://mein-wt32.local bzw. http://<sensorid>.local
-
+// #include "BluetoothSerial.h"
+// BluetoothSerial SerialBT;
 /* 29.3.2026 Webserver B */
 // String webServerActive = "X";
 #include <WebServer_WT32_ETH01.h>
@@ -38,9 +39,9 @@
 Preferences prefs;
 WebServer server(80);
 
+bool forceConfig = false; // für WLAN-"Schirm" des ESP32
 // Physischer Button (Zieht gegen GND)
-#define CONFIG_BUTTON_PIN 32 
-
+#define CONFIG_BUTTON_PIN 32
 
 // Variablen zum Zwischenspeichern der Werte
 String sensorid, apiKey, ssid, password, servername, mac;
@@ -55,7 +56,7 @@ void getPreferences()
   ssid = prefs.getString("ssid", "");
   password = prefs.getString("pass", "");
   servername = prefs.getString("srv", "");
-  //mac = prefs.getString("mac", "");
+  // mac = prefs.getString("mac", "");
   prefs.end();
 }
 void handleRoot()
@@ -82,9 +83,9 @@ void handleRoot()
   html += "<label>Sensor-ID:</label> <input type='text' name='sensorid' value='" + sensorid + "'><br>";
   html += "<label>API-Key:</label> <input type='text' name='apiKey' value='" + apiKey + "'><br>";
   html += "<label>SSID:</label> <input type='text' name='ssid' value='" + ssid + "'><br>";
-  html += "<label>Passwort:</label> <input type='password' name='password' value='" + password + "'><br>";
+  html += "<label>Passwort:</label> <input type='text' name='password' value='" + password + "'><br>";
   html += "<label>Servername:</label> <input type='text' name='servername' value='" + servername + "'><br>";
-   html += "<label>Macadresse:</label> <input type='text' name='mac' value='" + WiFi.macAddress() + "' readonly ><br>";
+  html += "<label>Macadresse:</label> <input type='text' name='mac' value='" + WiFi.macAddress() + "' readonly ><br>";
 
   html += "<br><input type='submit' value='Speichern und Neustarten'>";
   html += "</form></body></html>";
@@ -104,7 +105,6 @@ void handleSave()
     prefs.putString("ssid", server.arg("ssid"));
     prefs.putString("pass", server.arg("password"));
     prefs.putString("srv", server.arg("servername"));
-    
 
     prefs.end();
 
@@ -114,6 +114,23 @@ void handleSave()
 
     delay(2000);
     ESP.restart(); // Neustart, um die neuen Einstellungen zu übernehmen
+  }
+}
+
+void startConfigPortal()
+{
+  Serial.println("Starte Config Portal (AP: WT32_SETUP)...");
+  WiFi.mode(WIFI_AP);
+  WiFi.softAP("WT32_SETUP");
+
+  server.on("/", HTTP_GET, handleRoot);
+  server.on("/save", HTTP_POST, handleSave);
+  server.begin();
+
+  while (true)
+  {
+    server.handleClient();
+    delay(10);
   }
 }
 
@@ -138,6 +155,25 @@ int delaymin = 60;
 int delaytsec = 3600000;
 /* Webservice -E-*/
 
+/* Nimble -B-  */
+/*
+#include <NimBLEDevice.h>
+#include <ETH.h>
+
+// BLE UUIDs (können beliebig sein, Hauptsache eindeutig)
+#define SERVICE_UUID        "abcd"
+#define CHARACTERISTIC_UUID "1234"
+
+NimBLECharacteristic* pCharacteristic;
+
+void bleLog(String msg) {
+  if (pCharacteristic && pCharacteristic->getSubscribedCount() > 0) {
+    pCharacteristic->setValue(msg.c_str());
+    pCharacteristic->notify(); // Sendet den Text an das Handy
+  }
+} */
+
+/* Nimble -E-*/
 /* Telnet B*/
 #include "ESPTelnet.h"
 ESPTelnet telnet;
@@ -154,7 +190,10 @@ void debugLog(String msg)
 {
   // 1. Ausgabe auf dem physischen Seriellen Monitor
   Serial.println(msg);
-
+  // bleLog(msg);
+  /* if (SerialBT.hasClient()) { // Nur senden, wenn Handy verbunden ist
+      SerialBT.println(msg);
+    }   */
   // 2. Ausgabe über Telnet (nur wenn ein Client verbunden ist)
   if (telnet.isConnected())
   {
@@ -199,67 +238,144 @@ long interval = 10000; // Alle 10 Sekunden senden
 
 void setup()
 {
+  // Serial.begin(115200);
   Serial.begin(115200);
+  debugLog("Serial Start von Pedro");
+  // 1. NimBLE initialisieren
+  /*
+  NimBLEDevice::init("WT32_NimBLE_Debug");
+  NimBLEServer *pServer = NimBLEDevice::createServer();
+  NimBLEService *pService = pServer->createService(SERVICE_UUID);
+
+  // Characteristic mit "Notify" (für Echtzeit-Updates) erstellen
+  pCharacteristic = pService->createCharacteristic(
+                      CHARACTERISTIC_UUID,
+                      NIMBLE_PROPERTY::NOTIFY
+                    );
+
+  pService->start();
+  pServer->getAdvertising()->start();
+  Serial.println("BLE Debugging bereit..."); */
+
+  // Bluetooth Name festlegen
+  // SerialBT.begin("WT32_Debug_Schnittstelle");
+  // debugLog("Bluetooth Debugger gestartet...");
+  pinMode(CONFIG_BUTTON_PIN, INPUT_PULLUP); // Button für RESET
+                                            // Button-Check beim Start
+  if (digitalRead(CONFIG_BUTTON_PIN) == LOW)
+  {
+    forceConfig = true;
+  }
 
   // WLAN komplett ausschalten
- // WiFi.mode(WIFI_OFF);
- // WiFi.disconnect(true);
+  // WiFi.mode(WIFI_OFF);
+  // WiFi.disconnect(true);
 
   // Bluetooth-Radio stoppen
-  btStop();
+  // btStop();
   // Optional: Bluetooth-Speicher im RAM freigeben
-  esp_bt_controller_disable();
-  esp_bt_controller_deinit();
-  setCpuFrequencyMhz(40); // Takt auf 40 MHz reduzieren
+  // esp_bt_controller_disable();
+  // esp_bt_controller_deinit();
+  // setCpuFrequencyMhz(80); // Takt auf 40 MHz reduzieren
   dht.begin();
 
   // Ethernet initialisieren
   /* if (!ETH.begin(ETH_PHY_TYPE, ETH_PHY_ADDR, ETH_MDC_PIN, ETH_MDIO_PIN, ETH_POWER_PIN, ETH_CLK_MODE)) {
     Serial.println("ETH Fehler!");
   } */
+  if (!forceConfig)
+  { // new
+    debugLog("Versuche, Ethernet zu starten...");
+    if (!ETH.begin(1, 16, 23, 18, ETH_PHY_LAN8720, ETH_CLOCK_GPIO0_IN))
+    {
+      Serial.println("ETH Fehler!");
+    }
 
-  if (!ETH.begin(1, 16, 23, 18, ETH_PHY_LAN8720, ETH_CLOCK_GPIO0_IN))
+    unsigned long start = millis();
+    // while (ETH.localIP().toString() == "0.0.0.0" && millis() - start < 8000)
+    while (uint32_t(ETH.localIP()) == 0 && millis() - start < 8000)
+
+    {
+      delay(500);
+      Serial.print(".");
+    }
+    if (ETH.linkUp())
+    { // neuer Code
+      debugLog("Ethernet OK!  ");
+      // debugLog(ETH.localIP());
+    }
+    else
+    {
+      // 2. WiFi versuchen
+      debugLog("Ethernet fehlgeschlagen. Versuche WiFi...");
+      // String s = prefs.getString("ssid", "");
+      // String p = prefs.getString("pass", "");
+      getPreferences();
+      debugLog("SSID aus Preferences: " + ssid);
+      debugLog("Passwort aus Preferences: " + password);
+      if (ssid != "")
+      {
+        debugLog("Verbinde mit WiFi...");
+        start = millis();
+        WiFi.disconnect(true); // Alte Konfiguration löschen
+        delay(100);
+        WiFi.mode(WIFI_STA);
+        WiFi.begin(ssid.c_str(), password.c_str());
+        while (WiFi.status() != WL_CONNECTED && millis() - start < 8000)
+        {
+          delay(500);
+          debugLog("W.");
+        }
+
+        if (WiFi.status() != WL_CONNECTED)
+        {
+          debugLog("Verbindung fehlgeschlagen.");
+          int status = WiFi.status();
+          debugLog("Fehlercode: " + String(status));
+          // 4 = WL_CONNECT_FAILED (Falsches PW)
+          // 6 = WL_DISCONNECTED (Router außer Reichweite)
+          forceConfig = true;
+        }
+        else
+        {
+          debugLog("WiFi OK!");
+          debugLog(WiFi.localIP().toString().c_str()); // IP als String loggen
+        }
+      }
+      else
+      {
+        forceConfig = true;
+      }
+    }
+
+    // Serial.println("\nVerbunden! IP: " + ETH.localIP().toString());
+
+    /* Telnet B*/
+    // Telnet Setup
+    if (!forceConfig)
+    {
+
+      telnet.onConnect(onTelnetConnect);
+      if (telnet.begin(23, false))
+      { // Port 23, WiFi-Check deaktiviert
+        // telnet.begin(23, false);
+        // if (telnet.isConnected()) {
+        // dieser Code wird nicht ausgeführt!?
+        Serial.println("Telnet-Server gestartet");
+        debugLog("Telnet-Server gestartet");
+        IPAddress myIP = ETH.localIP();
+        String ipAsString = myIP.toString();
+        debugLog("Meine IP ist: " + ipAsString);
+      }
+    }
+    /* Telnet E*/
+    debugLog("Mac-Adresse:");   // Mac-Adresse ausgeben
+    debugLog(ETH.macAddress()); // Mac-Adresse ausgeben
+  }
+  if (forceConfig)
   {
-    Serial.println("ETH Fehler!");
+    startConfigPortal();
   }
-
-  // Neuer Funktionsaufruf für Core 3.x
-  /*if (!ETH.begin(
-    ETH_PHY_LAN8720,  // Der Enum-Typ (KEINE Zahl!)
-    1,                // PHY_ADDR
-    23,               // MDC_PIN
-    18,               // MDIO_PIN
-    16,               // POWER_PIN (Das ist deine "16")
-    ETH_CLOCK_GPIO0_IN // CLK_MODE
-  )) {
-    Serial.println("ETH Initialisierung fehlgeschlagen!");
-  } */
-
-  while (ETH.localIP().toString() == "0.0.0.0")
-  {
-    delay(500);
-    Serial.print(".");
-  }
-
-  Serial.println("\nVerbunden! IP: " + ETH.localIP().toString());
-
-  /* Telnet B*/
-  // Telnet Setup
-  telnet.onConnect(onTelnetConnect);
-  if (telnet.begin(23, false))
-  { // Port 23, WiFi-Check deaktiviert
-    // telnet.begin(23, false);
-    // if (telnet.isConnected()) {
-    // dieser Code wird nicht ausgeführt!?
-    Serial.println("Telnet-Server gestartet");
-    debugLog("Telnet-Server gestartet");
-    IPAddress myIP = ETH.localIP();
-    String ipAsString = myIP.toString();
-    debugLog("Meine IP ist: " + ipAsString);
-  }
-  /* Telnet E*/
-  debugLog("Mac-Adresse:");   // Mac-Adresse ausgeben
-  debugLog(ETH.macAddress()); // Mac-Adresse ausgeben
   // OTA Setup
   ArduinoOTA.setHostname("WT32-ETH01-Knoten");
   ArduinoOTA.begin();
@@ -270,6 +386,13 @@ void loop()
   /* Telnet B*/
   telnet.loop(); // Wichtig: Hält die Verbindung aufrecht
   server.handleClient();
+  // Optionale Prüfung im Betrieb: Button 3 Sek gedrückt halten für Reset
+  if (digitalRead(CONFIG_BUTTON_PIN) == LOW)
+  {
+    delay(3000);
+    if (digitalRead(CONFIG_BUTTON_PIN) == LOW)
+      ESP.restart();
+  }
   /* Telnet E*/
   /* Webserver 29.3.2029 -B- */
   /* if (webServerActive == "X")
