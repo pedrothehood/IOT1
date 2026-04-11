@@ -51,7 +51,7 @@ void getPreferences()
 {
   // Aktuelle Werte aus Preferences laden
   prefs.begin("config", true);
-  sensorid = prefs.getString("sid", "");
+  sensorid = prefs.getString("sid", "DHT_ETH-01"); // Default-Wert "DHT_ETH-01" für Sensor-ID, falls nicht gesetzt
   apiKey = prefs.getString("key", "");
   ssid = prefs.getString("ssid", "");
   password = prefs.getString("pass", "");
@@ -82,8 +82,8 @@ void handleRoot()
 
   html += "<label>Sensor-ID:</label> <input type='text' name='sensorid' value='" + sensorid + "'><br>";
   html += "<label>API-Key:</label> <input type='text' name='apiKey' value='" + apiKey + "'><br>";
-  html += "<label>SSID:</label> <input type='text' name='ssid' value='" + ssid + "'><br>";
-  html += "<label>Passwort:</label> <input type='text' name='password' value='" + password + "'><br>";
+  html += "<label>SSID:</label> <input type='text' name='ssid' value='" + ssid + "' readonly><br>";
+  html += "<label>Passwort:</label> <input type='text' name='password' value='" + password + "' readonly><br>";
   html += "<label>Servername:</label> <input type='text' name='servername' value='" + servername + "'><br>";
   html += "<label>Macadresse:</label> <input type='text' name='mac' value='" + WiFi.macAddress() + "' readonly ><br>";
 
@@ -201,6 +201,19 @@ void debugLog(String msg)
   }
 }
 /* Telnet E*/
+
+void err_init()
+{
+  delaymin = 1;
+  delaytsec = delaymin * 60 * 1000;
+  //      status = doc["sensorinfo"]["status"];
+  const char *status = "Aktiv";
+  strStatus = status;
+  const char *sleep = " ";
+  strSleep = sleep;
+  const char *serveractive = "X";
+  strServerActive = serveractive;
+}
 
 // Ethernet Pins für WT32-ETH01 (Core 3.x) geht nicht mit Core 3.x
 /*#define ETH_ADDR 1
@@ -459,6 +472,7 @@ void loop()
     // http.begin(client, serverNameFirst);
     https.begin(*client, serverNameFirst); // SSL
     int httpCodeGet = https.GET();
+    debugLog("HTTP GET Code: " + String(httpCodeGet));
     if (httpCodeGet > 0)
     {
       String payload = https.getString();
@@ -475,21 +489,41 @@ void loop()
         debugLog(F("First: deserializeJson() failed: "));
         Serial.println(error.f_str());
         debugLog(error.f_str());
-        return;
+        // return;
+        //  not found:
+
+        err_init();
+
+        /*delaymin = 1;
+        delaytsec = delaymin * 60 * 1000;
+        //      status = doc["sensorinfo"]["status"];
+        const char *status = "Aktiv";
+        strStatus = status;
+        const char *sleep = " " ;
+        strSleep = sleep;
+        const char *serveractive = "X";
+        strServerActive = serveractive; */
+
+        /* Webserver 29.3.2029 -B- */
+        debugLog("strServerActive NOTF DB =");
+        debugLog(strServerActive);
       }
-      delaymin = doc["sensorinfo"][0]["delaymin"];
-      delaytsec = delaymin * 60 * 1000;
-      //      status = doc["sensorinfo"]["status"];
-      const char *status = doc["sensorinfo"][0]["status"];
-      strStatus = status;
-      const char *sleep = doc["sensorinfo"][0]["sleep"];
-      strSleep = sleep;
-      const char *serveractive = doc["sensorinfo"][0]["serveractive"];
-      strServerActive = serveractive;
-      /* Webserver 29.3.2029 -B- */
-      debugLog("strServerActive=");
-      debugLog(strServerActive);
-      if (strServerActive == "X")
+      else
+      {
+        delaymin = doc["sensorinfo"][0]["delaymin"];
+        delaytsec = delaymin * 60 * 1000;
+        //      status = doc["sensorinfo"]["status"];
+        const char *status = doc["sensorinfo"][0]["status"];
+        strStatus = status;
+        const char *sleep = doc["sensorinfo"][0]["sleep"];
+        strSleep = sleep;
+        const char *serveractive = doc["sensorinfo"][0]["serveractive"];
+        strServerActive = serveractive;
+        /* Webserver 29.3.2029 -B- */
+        debugLog("strServerActive=");
+        debugLog(strServerActive);
+      }
+      /*if (strServerActive == "X")
       {
         // nach vorne genommen  server.handleClient();
         server.on("/", HTTP_GET, handleRoot);
@@ -498,11 +532,7 @@ void loop()
         Serial.println("HTTP Server läuft.");
         debugLog("HTTP Server läuft.");
       }
-      /* Webserver 29.3.2029 -E- */
-      Serial.print("status=");
-      Serial.println(strStatus);
-      Serial.print("delaytsec=");
-      Serial.println(delaytsec);
+
 
       debugLog("status=");
       debugLog(strStatus);
@@ -513,7 +543,34 @@ void loop()
 
       // temporär auskommentiert!!!! interval = delaytsec;    // Wichtig: setzt das aktuelle Intervall vom Server
       interval = delaytsec; // Wichtig: setzt das aktuelle Intervall vom Server
+    */
     }
+    else
+    {
+      err_init();
+    }
+
+    if (strServerActive == "X")
+    {
+      // nach vorne genommen  server.handleClient();
+      server.on("/", HTTP_GET, handleRoot);
+      server.on("/save", HTTP_POST, handleSave);
+      server.begin();
+      Serial.println("HTTP Server läuft.");
+      debugLog("HTTP Server läuft.");
+    }
+    /* Webserver 29.3.2029 -E- */
+
+    debugLog("status=");
+    debugLog(strStatus);
+    debugLog("sleep=");
+    debugLog(strSleep);
+    debugLog("delaytsec=");
+    debugLog(String(delaytsec));
+
+    // temporär auskommentiert!!!! interval = delaytsec;    // Wichtig: setzt das aktuelle Intervall vom Server
+    interval = delaytsec; // Wichtig: setzt das aktuelle Intervall vom Server
+
     https.end();
 
     // 3. Sensordaten per POST senden
